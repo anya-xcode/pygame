@@ -1,12 +1,56 @@
 import re
+import subprocess
+import os
+import sys
+
+# Try to import MSVCCompiler from various locations to support different
+# Python and setuptools versions:
+# - Python < 3.12: distutils.msvccompiler
+# - Python 3.12+ with setuptools < 72: setuptools._distutils.msvccompiler
+# - Python 3.12+ with setuptools >= 72: use platform detection instead
+MSVCCompiler = None
+get_build_architecture = None
 
 try:
     from distutils.msvccompiler import MSVCCompiler, get_build_architecture
 except ImportError:
-    from setuptools._distutils.msvccompiler import MSVCCompiler, get_build_architecture
-import subprocess
-import os
-
+    try:
+        from setuptools._distutils.msvccompiler import MSVCCompiler, get_build_architecture
+    except (ImportError, ModuleNotFoundError):
+        # Fallback for setuptools >= 72.0.0 where _distutils was removed
+        # We'll define a minimal implementation
+        import platform
+        
+        def get_build_architecture():
+            """Get the build architecture for Windows."""
+            # Check if we're on 64-bit or 32-bit
+            if sys.maxsize > 2**32:
+                return "AMD64"  # or "x64"
+            else:
+                return "Intel"  # or "x86"
+        
+        # For MSVCCompiler, we'll need to import from a different location or handle it
+        try:
+            # Try the newer setuptools approach
+            from setuptools import msvc
+            from setuptools.msvc import MSVCCompiler as _MSVC
+            MSVCCompiler = _MSVC
+        except (ImportError, AttributeError):
+            # If all else fails, create a minimal stub
+            # This is a last resort and may not work for all operations
+            class MSVCCompiler:
+                def __init__(self):
+                    pass
+                
+                def initialize(self):
+                    # Minimal initialization
+                    import shutil
+                    self.lib = shutil.which('lib.exe') or 'lib'
+                    self.find_exe = lambda name: shutil.which(name) or name
+                
+                def spawn(self, cmd):
+                    import subprocess
+                    subprocess.check_call(cmd)
 
 compiler = MSVCCompiler()
 compiler.initialize()
